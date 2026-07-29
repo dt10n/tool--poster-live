@@ -248,7 +248,7 @@ def get_best_font_and_lines(text, initial_size, max_width, max_lines, font_path)
     font = _load_font(font_path, current_size)
     return font, wrap_text(text, font, max_width)
 
-def create_poster(template_path, output_path, qr_image_path, title, caption_list, live_time, template_id="template_final", date_code="", live_link=None, feishu_qr_images=None):
+def create_poster(template_path, output_path, qr_image_path, title, caption_list, live_time, template_id="template_final", date_code="", live_link=None, feishu_qr_images=None, title_max_lines=2):
     """
     根据内容生成海报图片。
     """
@@ -278,12 +278,13 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         _qr_path = feishu_qr_images[0]  # 如果只有1个，退回第一个
     qr_image_path = _qr_path  # 覆盖原参数
 
-    # 自动从 live_time 推导 date_code（MMDD格式，如"7月9日" → "0709"）
+    # 自动从 live_time 推导 date_code（YYMMDD格式，如2026"7月9日" → "260709"；年份用当前年后两位）
     if not date_code and live_time:
-        import re as _re
+        import re as _re, datetime as _dt
         m = _re.search(r'(\d{1,2})[月](\d{1,2})', live_time)
         if m:
-            date_code = f"{int(m.group(1)):02d}{int(m.group(2)):02d}"
+            _yy = _dt.datetime.now().strftime('%y')
+            date_code = f"{_yy}{int(m.group(1)):02d}{int(m.group(2)):02d}"
 
     # --- 1. 加载模板 ---
     try:
@@ -442,27 +443,22 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
                 bg_color = (22, 58, 154, 255)
             draw.rectangle([bx, ey, bx + bw, ey], fill=bg_color)
 
-        # ② 字号：默认116（与周围文字高度匹配），可通过 config 的 date_code_font_size 覆盖
-        #    填写区宽318px，"0709"在116号字时宽275px，刚好合适
-        #    template_6 横版用更大字号（130），由代码自动缩小到填写区能放下的最大值
+        # ② 字号：默认116（与周围文字高度匹配），可由 config 覆盖。
+        #    整串一次性绘制（与时间数字"19:00"完全同方式），不逐字、不压缩。
+        #    新模板括号空隙够宽（469px），6位116号(408px)放得下，正常满格。
+        #    仅当超宽时才自动缩小字号兜底（防溢出）。
         target_size = (config.get("date_code_font_size") if config else None) or 116
-        try:
-            date_font = _load_font(bold_font_path, target_size)
-        except Exception:
-            date_font = ImageFont.load_default()
+        date_font = _load_font(bold_font_path, target_size)
         tb = draw.textbbox((0, 0), date_code, font=date_font)
-        tw = tb[2] - tb[0]
-        th = tb[3] - tb[1]
-        # 仅当文字超宽时才缩小（保证不溢出）
+        tw = tb[2] - tb[0]; th = tb[3] - tb[1]
         while tw > bw - 4 and target_size > 80:
             target_size -= 2
             date_font = _load_font(bold_font_path, target_size)
             tb = draw.textbbox((0, 0), date_code, font=date_font)
-            tw = tb[2] - tb[0]
-            th = tb[3] - tb[1]
+            tw = tb[2] - tb[0]; th = tb[3] - tb[1]
 
         # ③ 水平居中、垂直居中
-        tx = bx + (bw - tw) // 2
+        tx = bx + (bw - tw) // 2 - tb[0]
         ty = by + (bh - th) // 2 - tb[1]
         draw.text((tx, ty), date_code, font=date_font, fill=DATE_CODE_COLOR)
 
@@ -471,7 +467,7 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     # 4.1 绘制标题（自适应字号与换行）
     # template_5 使用专用函数 _draw_template5_content，此处跳过
     if template_id != "template_5":
-        title_font, title_lines = get_best_font_and_lines(title, title_font_size_cfg, title_max_width, 2, bold_font_path)
+        title_font, title_lines = get_best_font_and_lines(title, title_font_size_cfg, title_max_width, title_max_lines, bold_font_path)
 
         # 测量标题视觉高度
         _title_vis_h = 0
@@ -480,7 +476,7 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             _title_vis_h += (_tb[3] - _tb[1]) + 20
         _title_vis_h = max(0, _title_vis_h - 20)
 
-        # ── 动态间距（所有5张模板长期规则）──
+        # ── 动态间距（所有模板长期规则）──
         # 公式：gap = (可用区 - 标题高 - 文案高) / 2，上下对称
         # 文案越多越长 → gap 自动缩小；文案越少越短 → gap 自动增大
         # 最小 60px 保底，确保三者之间肉眼可见留白
@@ -502,7 +498,14 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             _captions_h = _sp * _n_caps
             _gap = (_avail - _title_vis_h - _captions_h - 74) // 2
         default_spacing = _sp
-        _gap = max(_gap, 30)
+        # 标题到介绍文案的外部间隙需要明显大于文案内部间距，并与模板5保持一致。
+        _title_caption_gap_min = (config.get("title_caption_gap_min") if config else None) or 90
+        if len(title_lines) >= 2:
+            _title_caption_gap_min = max(
+                _title_caption_gap_min,
+                (config.get("title_caption_gap_min_two_lines") if config else None) or 120
+            )
+        _gap = max(_gap, _title_caption_gap_min)
 
         # 绘制标题
         current_y = title_pos_y
@@ -534,7 +537,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     
     # 统一字号计算 (针对所有文案)
     line_gap = 10
-    best_size = 88
+    min_caption_size = (config.get("caption_min_font_size") if config else None) or 96
+    best_size = (config.get("caption_font_size") if config else None) or min_caption_size
 
     # 先检测是否有文案需要换2行，若有则扩大 spacing 让2行放得下
     _detect_font = _load_font(regular_font_path, best_size)
@@ -566,7 +570,7 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     _time_top_for_cap = _content_bot
     _cap_avail = _time_top_for_cap - bullet_area_start_y - 20
 
-    while best_size >= 52:
+    while best_size >= min_caption_size:
         try:
             candidate_font = _load_font(regular_font_path, best_size)
         except Exception:
@@ -593,8 +597,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         if _min_total <= _cap_avail:
             break  # 放得下
         best_size -= 2
-    if best_size < 52:
-        best_size = 52
+    if best_size < min_caption_size:
+        best_size = min_caption_size
 
     final_item_font = _load_font(regular_font_path, best_size)
     
@@ -624,8 +628,11 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     _avail_draw = _time_top_draw - 20 - bullet_area_start_y - _first_lh // 2
 
     if _n_draw > 1:
+        # 介绍文案内部行间距必须小于标题→文案、文案→时间的外部间隙。
+        # 图1-4与图5统一：文案之间最多40px，不再按剩余空间拉大。
+        _caption_gap_max = (config.get("caption_item_gap_max") if config else None) or 40
         _gap_between = max((_avail_draw - _total_cap_h) // (_n_draw - 1), 20)
-        _gap_between = min(_gap_between, 120)
+        _gap_between = min(_gap_between, _caption_gap_max)
     else:
         _gap_between = 0
 
@@ -742,7 +749,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         _draw_template5_content(
             base_image, txt_layer, draw,
             title, caption_list, date_code,
-            bold_font_path, regular_font_path, config
+            bold_font_path, regular_font_path, config,
+            title_max_lines
         )
 
     # 保存
@@ -752,7 +760,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
 
 def _draw_template5_content(base_image, txt_layer, draw,
                              title, caption_list, date_code,
-                             bold_font_path, regular_font_path, config):
+                             bold_font_path, regular_font_path, config,
+                             title_max_lines=2):
     """
     模板五自动布局（长期规则，所有情况通用）：
 
@@ -770,6 +779,8 @@ def _draw_template5_content(base_image, txt_layer, draw,
 
     title_x     = config.get("title_x",        150)
     title_max_w = config.get("title_max_width", 2116)
+    caption_max_w = config.get("caption_max_width", title_max_w)  # 文案框宽度，可独立于标题
+    content_shift = config.get("t5_content_shift", 0)             # 标题+文案整体垂直偏移
     content_x   = config.get("content_x",       280)
     dot_x       = config.get("bullet_dot_x",    195)
     dot_r       = config.get("bullet_dot_r",    14)
@@ -785,7 +796,7 @@ def _draw_template5_content(base_image, txt_layer, draw,
     title_vis_h = 0
     if title:
         title_font, title_lines = get_best_font_and_lines(
-            title, 148, title_max_w, 2, bold_font_path)
+            title, 148, title_max_w, title_max_lines, bold_font_path)
         for line in title_lines:
             tb = draw.textbbox((0, 0), line, font=title_font)
             title_vis_h += (tb[3] - tb[1]) + 20
@@ -798,9 +809,10 @@ def _draw_template5_content(base_image, txt_layer, draw,
     lh = top_offset = 0
     line_gap_t5 = 10
     if n > 0:
-        best_size = 88
+        min_caption_size = (config.get("caption_min_font_size") if config else None) or 96
+        best_size = (config.get("caption_font_size") if config else None) or min_caption_size
         _df = _load_font(regular_font_path, best_size)
-        _has2 = any(len(wrap_text(it, _df, title_max_w - 60)) > 1 for it in caption_list)
+        _has2 = any(len(wrap_text(it, _df, caption_max_w - 60)) > 1 for it in caption_list)
         if _has2:
             _tb_tmp = draw.textbbox((0, 0), '中', font=_df)
             _lh_tmp = _tb_tmp[3] - _tb_tmp[1]
@@ -808,14 +820,14 @@ def _draw_template5_content(base_image, txt_layer, draw,
             if SPACING < _sp2:
                 SPACING = _sp2
 
-        while best_size >= 52:
+        while best_size >= min_caption_size:
             try:
                 f = _load_font(regular_font_path, best_size)
             except Exception:
                 f = ImageFont.load_default(); break
             fits = True
             for item in caption_list:
-                lines = wrap_text(item, f, title_max_w - 60)
+                lines = wrap_text(item, f, caption_max_w - 60)
                 tb0 = draw.textbbox((0, 0), lines[0], font=f)
                 lh_c = tb0[3] - tb0[1]
                 block_h = len(lines)*lh_c + max(0,len(lines)-1)*line_gap_t5
@@ -825,7 +837,7 @@ def _draw_template5_content(base_image, txt_layer, draw,
                 item_font = f; break
             best_size -= 2
         if item_font is None:
-            item_font = _load_font(regular_font_path, 52)
+            item_font = _load_font(regular_font_path, min_caption_size)
         tb0 = draw.textbbox((0, 0), caption_list[0], font=item_font)
         lh = tb0[3] - tb0[1]
         top_offset = tb0[1]
@@ -836,8 +848,8 @@ def _draw_template5_content(base_image, txt_layer, draw,
     total_content = title_vis_h + captions_h
     gap = min(max((avail - total_content) // 2, MIN_GAP), 200)
 
-    # 标题起始y：AREA_TOP + gap（上方留 gap）
-    title_start = AREA_TOP + gap
+    # 标题起始y：AREA_TOP + gap（上方留 gap）；content_shift 让标题+文案整体下移
+    title_start = AREA_TOP + gap + content_shift
 
     # ── Step4：绘制标题 ──
     cur_y = title_start
@@ -857,7 +869,7 @@ def _draw_template5_content(base_image, txt_layer, draw,
         # 预计算各条文案块高
         _t5_blocks = []
         for item in caption_list:
-            lines = wrap_text(item, item_font, title_max_w - 60)
+            lines = wrap_text(item, item_font, caption_max_w - 60)
             tb0 = draw.textbbox((0, 0), lines[0], font=item_font)
             _lh5 = tb0[3] - tb0[1]
             _to5 = tb0[1]

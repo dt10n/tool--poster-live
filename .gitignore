@@ -1,0 +1,19 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Runtime outputs
+output/
+qr_*.png
+*_auto_qr.png
+temp_qr.png
+lark-im-resources/
+
+# Local scheduler/log artifacts
+scheduled/
+*.log
+*.plist
+
+# Local archives
+*.zip
+*.tar.gz
