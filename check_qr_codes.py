@@ -13,7 +13,7 @@ check_qr_codes.py — 检查PPT制作群是否有胡亮发的二维码，并下�
 
 【长期规则，勿修改】
     PPT制作群 chat_id : oc_918c9be8ab6950e746bc308c8c32a334
-    胡亮 open_id      : ou_0c491c7eb6f52da668fc2ef7264c6255
+    胡亮 open_id      : ou_5d68d3ab3c26fb8e84287d2521cfc572
 
     二维码取用规则：按胡亮发送顺序取前3张图片，不依赖文字标注/关键词
         qr_1 = 胡亮发的第1张图片 → template_2（翻写）、template_3（回放）使用
@@ -30,7 +30,10 @@ import sys
 from datetime import datetime
 
 PPT_CHAT_ID = "oc_918c9be8ab6950e746bc308c8c32a334"
-HULIANG_OPEN_ID = "ou_0c491c7eb6f52da668fc2ef7264c6255"
+HULIANG_OPEN_IDS = {
+    "ou_5d68d3ab3c26fb8e84287d2521cfc572",  # 2026-08-10 PPT制作群实测
+    "ou_0c491c7eb6f52da668fc2ef7264c6255",  # 历史配置，保留兼容
+}
 LARK_CLI = os.path.expanduser("~/.npm-global/bin/lark-cli")
 LARK_PROFILE = os.environ.get("LARK_PROFILE", "live-poster-bot")
 
@@ -91,7 +94,7 @@ def find_qr_messages(messages: list, since_ts: float = 0) -> dict:
     # 过滤胡亮的消息（且晚于 since_ts，防止误抓上一期旧二维码），转为时间正序（最早在前）
     huliang_msgs = [
         m for m in messages
-        if m.get("sender", {}).get("id") == HULIANG_OPEN_ID
+        if m.get("sender", {}).get("id") in HULIANG_OPEN_IDS
         and (since_ts <= 0 or _msg_timestamp(m) >= since_ts)
     ]
     if not huliang_msgs:

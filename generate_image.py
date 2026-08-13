@@ -248,6 +248,68 @@ def get_best_font_and_lines(text, initial_size, max_width, max_lines, font_path)
     font = _load_font(font_path, current_size)
     return font, wrap_text(text, font, max_width)
 
+def _measure_caption_blocks(draw, caption_list, font, max_width, line_gap):
+    """Measure caption visual blocks so vertical spacing can be balanced exactly."""
+    blocks = []
+    for item in caption_list:
+        lines = wrap_text(item, font, max_width)
+        if not lines:
+            lines = [""]
+        tb0 = draw.textbbox((0, 0), lines[0] or " ", font=font)
+        first_lh = tb0[3] - tb0[1]
+        top_off = tb0[1]
+        block_h = len(lines) * first_lh + max(0, len(lines) - 1) * line_gap
+        blocks.append((lines, block_h, first_lh, top_off))
+    return blocks
+
+def _compute_caption_stack_layout(
+    title_vis_bot,
+    content_bottom,
+    blocks,
+    title_caption_gap_min,
+    caption_time_gap_min,
+    caption_gap_max,
+    caption_gap_min=18,
+    content_y_offset=0,
+):
+    """
+    Balance the two outside gaps around the caption stack:
+    title -> captions and captions -> time/content boundary.
+    """
+    if not blocks:
+        return 0, 0, 0, 0
+
+    n = len(blocks)
+    total_cap_h = sum(block[1] for block in blocks)
+    internal_gap = caption_gap_max if n > 1 else 0
+    available = content_bottom - title_vis_bot
+
+    while (
+        n > 1
+        and total_cap_h + internal_gap * (n - 1) + title_caption_gap_min + caption_time_gap_min > available
+        and internal_gap > caption_gap_min
+    ):
+        internal_gap -= 2
+
+    caption_stack_h = total_cap_h + internal_gap * max(0, n - 1)
+    outside_total = available - caption_stack_h
+    outside_min_total = title_caption_gap_min + caption_time_gap_min
+
+    if outside_total >= outside_min_total:
+        extra = outside_total - outside_min_total
+        top_gap = title_caption_gap_min + extra // 2
+        bottom_gap = caption_time_gap_min + extra - extra // 2
+    else:
+        top_gap = max(caption_gap_max + 1, min(title_caption_gap_min, max(0, outside_total // 2)))
+        bottom_gap = max(0, outside_total - top_gap)
+        print(
+            "[布局警告] 文案区域高度不足，已保持字号和文案完整；"
+            f"top_gap={top_gap}, bottom_gap={bottom_gap}, available={available}"
+        )
+
+    first_dot_y = title_vis_bot + top_gap + blocks[0][2] // 2 + content_y_offset
+    return first_dot_y, internal_gap, top_gap, bottom_gap
+
 def create_poster(template_path, output_path, qr_image_path, title, caption_list, live_time, template_id="template_final", date_code="", live_link=None, feishu_qr_images=None, title_max_lines=2):
     """
     根据内容生成海报图片。
@@ -415,8 +477,6 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     title_font_size_cfg = (config.get("title_font_size") if config else None) or 148
     bullet_text_start_x = (config.get("content_x")      if config else None) or 346
     bullet_dot_x        = bullet_dot_x_cfg if bullet_dot_x_cfg is not None else 275
-    # 优先使用 config 的 bullet_spacing 作为初始间距，否则默认 144
-    default_spacing     = bullet_spacing_cfg if bullet_spacing_cfg is not None else 144
 
     if time_box:
         time_box_coords = [time_box[0], time_box[1], time_box[0] + time_box[2], time_box[1] + time_box[3]]
@@ -469,44 +529,6 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     if template_id != "template_5":
         title_font, title_lines = get_best_font_and_lines(title, title_font_size_cfg, title_max_width, title_max_lines, bold_font_path)
 
-        # 测量标题视觉高度
-        _title_vis_h = 0
-        for _ln in title_lines:
-            _tb = draw.textbbox((0, 0), _ln, font=title_font)
-            _title_vis_h += (_tb[3] - _tb[1]) + 20
-        _title_vis_h = max(0, _title_vis_h - 20)
-
-        # ── 动态间距（所有模板长期规则）──
-        # 公式：gap = (可用区 - 标题高 - 文案高) / 2，上下对称
-        # 文案越多越长 → gap 自动缩小；文案越少越短 → gap 自动增大
-        # 最小 60px 保底，确保三者之间肉眼可见留白
-        _n_caps = len(caption_list) if caption_list else 0
-        _captions_h = default_spacing * _n_caps
-        _time_top = _content_bot
-        _avail = _time_top - title_pos_y
-        _CAP_OFFSET = 74   # 圆点中心到文字顶部的偏移（lh//2+top_offset）
-        _gap = (_avail - _title_vis_h - _captions_h - _CAP_OFFSET) // 2
-
-        # 若 gap < 60，缩小文案行间距直到 gap≥60
-        # 缩小后的间距写回 default_spacing，后续绘制循环中 spacing 变量会读取
-        # 动态压缩 spacing，确保所有文案都能放进内容区
-        # 目标：gap >= 40px（标题→文案和文案→时间条都留40px）
-        # 压缩下限：spacing >= 80px（换行文案也能显示）
-        _sp = default_spacing
-        while _gap < 40 and _sp > 80:
-            _sp -= 2
-            _captions_h = _sp * _n_caps
-            _gap = (_avail - _title_vis_h - _captions_h - 74) // 2
-        default_spacing = _sp
-        # 标题到介绍文案的外部间隙需要明显大于文案内部间距，并与模板5保持一致。
-        _title_caption_gap_min = (config.get("title_caption_gap_min") if config else None) or 90
-        if len(title_lines) >= 2:
-            _title_caption_gap_min = max(
-                _title_caption_gap_min,
-                (config.get("title_caption_gap_min_two_lines") if config else None) or 120
-            )
-        _gap = max(_gap, _title_caption_gap_min)
-
         # 绘制标题
         current_y = title_pos_y
         for line in title_lines:
@@ -515,61 +537,13 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             current_y += (tb[3] - tb[1]) + 20
         title_vis_bot = current_y - 20
 
-    # 文案起点计算：
-    # _gap = 标题视觉底 → 文案第一行文字顶部 的距离
-    # bullet_area_start_y（圆点中心）= 文案文字顶 + lh//2 + top_offset ≈ 文字顶 + 74px
-    # 所以: bullet_area_start_y = title_vis_bot + _gap + 74
-    _cap_text_offset = 74   # 圆点中心距文字顶部的固定偏移（lh//2≈48 + top_offset≈26）
-    if title_vis_bot is not None:
-        bullet_area_start_y = title_vis_bot + _gap + _cap_text_offset + content_y_offset
-    else:
-        bullet_area_start_y = (bullet_start_y_cfg if bullet_start_y_cfg is not None else 2583) + content_y_offset
-
     # 4.2 绘制文案列表 (支持 3 句或 4 句) - template_5 跳过，由专用函数处理
-    if template_id == "template_5":
-        num_captions = 0  # 跳过通用文案绘制
-    else:
-        num_captions = len(caption_list)
-    
-    # 间距由动态逻辑确定（default_spacing 已在 4.1 中根据内容调整）
-    # bullet_spacing_cfg 是 config 的初始值，仅作参考，不覆盖动态结果
-    spacing = default_spacing
-    
     # 统一字号计算 (针对所有文案)
     line_gap = 10
     min_caption_size = (config.get("caption_min_font_size") if config else None) or 96
     best_size = (config.get("caption_font_size") if config else None) or min_caption_size
 
-    # 先检测是否有文案需要换2行，若有则扩大 spacing 让2行放得下
-    _detect_font = _load_font(regular_font_path, best_size)
-    _has_2lines = any(
-        len(wrap_text(item, _detect_font, caption_max_width - 80)) > 1
-        for item in caption_list
-    )
-    if _has_2lines:
-        _tb_tmp = draw.textbbox((0, 0), '中', font=_detect_font)
-        _lh_tmp = _tb_tmp[3] - _tb_tmp[1]
-        _spacing_2line = _lh_tmp * 2 + line_gap + 30   # 2行 + 上下各15px
-        if spacing < _spacing_2line:
-            spacing = _spacing_2line
-            # 重新用扩大后的 spacing 计算 bullet_area_start_y（保持 gap 对称）
-            if title_vis_bot is not None:
-                _tt = _content_bot
-                _av = _tt - title_pos_y
-                _th = sum(
-                    (draw.textbbox((0,0), ln, font=title_font)[3]
-                     - draw.textbbox((0,0), ln, font=title_font)[1]) + 20
-                    for ln in (title_lines or [])
-                ) - 20 if title_lines else 0
-                _nc = len(caption_list) if caption_list else 0
-                _gap_new = max((_av - _th - spacing * _nc - 74) // 2, 60)
-                bullet_area_start_y = title_vis_bot + _gap_new + 74 + content_y_offset
-
-    # 字号自适应：确保所有文案块加上句间留白能放进内容区
-    # 可用高度 = 时间框顶 - bullet_area_start_y - 首行高/2 - 20px边距
-    _time_top_for_cap = _content_bot
-    _cap_avail = _time_top_for_cap - bullet_area_start_y - 20
-
+    # 字号自适应只用于避免单条超过2行；默认不压缩到96以下。
     while best_size >= min_caption_size:
         try:
             candidate_font = _load_font(regular_font_path, best_size)
@@ -588,53 +562,47 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             _blocks_test.append((_bh, _lh0, _tb0[1]))
         if not ok:
             best_size -= 2; continue
-
-        # 预算总高度：所有文案块 + 句间留白(最小20px×(n-1))
-        _total_test = sum(b[0] for b in _blocks_test)
-        _n_test = len(_blocks_test)
-        _first_lh_test = _blocks_test[0][1] if _blocks_test else 0
-        _min_total = _total_test + max(0, _n_test - 1) * 20 + _first_lh_test // 2
-        if _min_total <= _cap_avail:
-            break  # 放得下
-        best_size -= 2
+        break
     if best_size < min_caption_size:
         best_size = min_caption_size
 
     final_item_font = _load_font(regular_font_path, best_size)
-    
-    # 增加标题和上方人像的间隔
-    title_bottom_margin = 80  # 标题下方增加间隔
 
     # template_5 由 _draw_template5_content 专用函数处理，跳过通用循环
     _caption_list_to_draw = [] if template_id == "template_5" else caption_list
 
-    # ── 预计算各条文案的块高，确定句间留白 ──
-    _cap_blocks = []
-    for item in _caption_list_to_draw:
-        lines = wrap_text(item, final_item_font, caption_max_width - 80)
-        tb0 = draw.textbbox((0, 0), lines[0], font=final_item_font)
-        _lh = tb0[3] - tb0[1]
-        _to = tb0[1]
-        _block_h = len(lines) * _lh + max(0, len(lines)-1) * line_gap
-        _cap_blocks.append((lines, _block_h, _lh, _to))
+    # ── 预计算文案块，并根据标题/文案/时间边界自动分配上下两个留白 ──
+    _cap_blocks = _measure_caption_blocks(
+        draw,
+        _caption_list_to_draw,
+        final_item_font,
+        caption_max_width - 80,
+        line_gap,
+    )
 
-    # 计算句间留白：均匀分配可用空间
-    _total_cap_h = sum(b[1] for b in _cap_blocks)
-    _n_draw = len(_cap_blocks)
-    _time_top_draw = _content_bot
-
-    # 可用区 = 时间框顶部 - 文案起点 - 首行偏移
-    _first_lh = _cap_blocks[0][2] if _cap_blocks else 0
-    _avail_draw = _time_top_draw - 20 - bullet_area_start_y - _first_lh // 2
-
-    if _n_draw > 1:
-        # 介绍文案内部行间距必须小于标题→文案、文案→时间的外部间隙。
-        # 图1-4与图5统一：文案之间最多40px，不再按剩余空间拉大。
+    if title_vis_bot is not None and _cap_blocks:
+        _title_caption_gap_min = (config.get("title_caption_gap_min") if config else None) or 90
+        if len(title_lines) >= 2:
+            _title_caption_gap_min = max(
+                _title_caption_gap_min,
+                (config.get("title_caption_gap_min_two_lines") if config else None) or 120,
+            )
+        _caption_time_gap_min = (config.get("caption_time_gap_min") if config else None) or 90
         _caption_gap_max = (config.get("caption_item_gap_max") if config else None) or 40
-        _gap_between = max((_avail_draw - _total_cap_h) // (_n_draw - 1), 20)
-        _gap_between = min(_gap_between, _caption_gap_max)
+        _caption_gap_min = (config.get("caption_item_gap_min") if config else None) or 18
+        bullet_area_start_y, _gap_between, _top_gap, _bottom_gap = _compute_caption_stack_layout(
+            title_vis_bot=title_vis_bot,
+            content_bottom=_content_bot,
+            blocks=_cap_blocks,
+            title_caption_gap_min=_title_caption_gap_min,
+            caption_time_gap_min=_caption_time_gap_min,
+            caption_gap_max=_caption_gap_max,
+            caption_gap_min=_caption_gap_min,
+            content_y_offset=content_y_offset,
+        )
     else:
-        _gap_between = 0
+        bullet_area_start_y = (bullet_start_y_cfg if bullet_start_y_cfg is not None else 2583) + content_y_offset
+        _gap_between = (config.get("caption_item_gap_max") if config else None) or 40
 
     # ── 逐条绘制 ──
     _cur_y = bullet_area_start_y   # 第一条圆点中心y
@@ -765,13 +733,8 @@ def _draw_template5_content(base_image, txt_layer, draw,
     """
     模板五自动布局（长期规则，所有情况通用）：
 
-    可用区：y=1154~2350（白色空白区 ~ 时间胶囊顶部）
-    布局原则（与模板1-4完全一致）：
-      - 可用区 = 时间框顶部 - 标题起始y
-      - 总内容高 = 标题高 + 文案高（144px × 条数）
-      - gap = (可用区 - 总内容高) / 2，上下对称
-      - 文案越多/越长 → gap 自动缩小；文案越少/越短 → gap 自动增大
-      - 最小 gap = 60px（绝不挤在一起）
+    标题先按固定设计字号/宽度绘制；介绍文案再按实际换行高度计算，
+    自动分配“标题→文案”和“文案→时间”的两个外部留白。
     """
     TITLE_COLOR  = (26, 59, 142, 255)
     TEXT_COLOR   = (26, 59, 142, 255)
@@ -785,40 +748,23 @@ def _draw_template5_content(base_image, txt_layer, draw,
     dot_x       = config.get("bullet_dot_x",    195)
     dot_r       = config.get("bullet_dot_r",    14)
 
-    AREA_TOP = 1220   # 白色内容区顶部（下移让标题不太靠上）
-    TIME_TOP = 2350   # 时间胶囊顶部
-    SPACING  = 144    # 文案行间距（与图1~4一致）
-    MIN_GAP  = 60     # 最小间距保底
+    title_y = config.get("title_y", 1354) + content_shift
+    TIME_TOP = config.get("content_bot", 2367)
 
     # ── Step1：标题字号和视觉高度 ──
     title_font = None
     title_lines = []
-    title_vis_h = 0
     if title:
         title_font, title_lines = get_best_font_and_lines(
             title, 148, title_max_w, title_max_lines, bold_font_path)
-        for line in title_lines:
-            tb = draw.textbbox((0, 0), line, font=title_font)
-            title_vis_h += (tb[3] - tb[1]) + 20
-        title_vis_h = max(0, title_vis_h - 20)
 
     # ── Step2：文案字号（单条≤2行）──
-    # 若有2行文案，SPACING 自动扩大为能容纳2行的最小值
     n = len(caption_list) if caption_list else 0
     item_font = None
-    lh = top_offset = 0
     line_gap_t5 = 10
     if n > 0:
         min_caption_size = (config.get("caption_min_font_size") if config else None) or 96
         best_size = (config.get("caption_font_size") if config else None) or min_caption_size
-        _df = _load_font(regular_font_path, best_size)
-        _has2 = any(len(wrap_text(it, _df, caption_max_w - 60)) > 1 for it in caption_list)
-        if _has2:
-            _tb_tmp = draw.textbbox((0, 0), '中', font=_df)
-            _lh_tmp = _tb_tmp[3] - _tb_tmp[1]
-            _sp2 = _lh_tmp * 2 + line_gap_t5 + 30
-            if SPACING < _sp2:
-                SPACING = _sp2
 
         while best_size >= min_caption_size:
             try:
@@ -831,29 +777,17 @@ def _draw_template5_content(base_image, txt_layer, draw,
                 tb0 = draw.textbbox((0, 0), lines[0], font=f)
                 lh_c = tb0[3] - tb0[1]
                 block_h = len(lines)*lh_c + max(0,len(lines)-1)*line_gap_t5
-                if len(lines) > 2 or block_h > SPACING - 20:
+                if len(lines) > 2:
                     fits = False; break
             if fits:
                 item_font = f; break
             best_size -= 2
         if item_font is None:
             item_font = _load_font(regular_font_path, min_caption_size)
-        tb0 = draw.textbbox((0, 0), caption_list[0], font=item_font)
-        lh = tb0[3] - tb0[1]
-        top_offset = tb0[1]
 
-    # ── Step3：动态 gap（与模板1-4完全一致的公式）──
-    captions_h = SPACING * n
-    avail = TIME_TOP - AREA_TOP
-    total_content = title_vis_h + captions_h
-    gap = min(max((avail - total_content) // 2, MIN_GAP), 200)
-
-    # 标题起始y：AREA_TOP + gap（上方留 gap）；content_shift 让标题+文案整体下移
-    title_start = AREA_TOP + gap + content_shift
-
-    # ── Step4：绘制标题 ──
-    cur_y = title_start
-    title_vis_bot = title_start
+    # ── Step3：绘制标题 ──
+    cur_y = title_y
+    title_vis_bot = title_y
     if title and title_font:
         for line in title_lines:
             tb = draw.textbbox((0, 0), line, font=title_font)
@@ -861,30 +795,34 @@ def _draw_template5_content(base_image, txt_layer, draw,
             cur_y += (tb[3] - tb[1]) + 20
         title_vis_bot = cur_y - 20
 
-    # ── Step5：绘制文案，起点 = 标题底 + gap（最少120px留白）──
+    # ── Step4：绘制文案，起点由统一布局函数自动计算 ──
     if n > 0 and item_font:
-        line_gap = 10
-        first_dot_y = title_vis_bot + max(gap, 120)
-
-        # 预计算各条文案块高
-        _t5_blocks = []
-        for item in caption_list:
-            lines = wrap_text(item, item_font, caption_max_w - 60)
-            tb0 = draw.textbbox((0, 0), lines[0], font=item_font)
-            _lh5 = tb0[3] - tb0[1]
-            _to5 = tb0[1]
-            _bh5 = len(lines) * _lh5 + max(0, len(lines)-1) * line_gap
-            _t5_blocks.append((lines, _bh5, _lh5, _to5))
-
-        # 计算句间留白（均匀分配剩余空间）
-        _total_h5 = sum(b[1] for b in _t5_blocks)
-        _n5 = len(_t5_blocks)
-        if _n5 > 1:
-            _avail5 = TIME_TOP - first_dot_y - _t5_blocks[0][2] // 2
-            _gap5 = max((_avail5 - _total_h5) // (_n5 - 1), 40)
-            _gap5 = min(_gap5, 40)
-        else:
-            _gap5 = 0
+        _t5_blocks = _measure_caption_blocks(
+            draw,
+            caption_list,
+            item_font,
+            caption_max_w - 60,
+            line_gap_t5,
+        )
+        _title_caption_gap_min = config.get("title_caption_gap_min", 90)
+        if len(title_lines) >= 2:
+            _title_caption_gap_min = max(
+                _title_caption_gap_min,
+                config.get("title_caption_gap_min_two_lines", 120),
+            )
+        _caption_time_gap_min = config.get("caption_time_gap_min", 90)
+        _caption_gap_max = config.get("caption_item_gap_max", 40)
+        _caption_gap_min = config.get("caption_item_gap_min", 18)
+        first_dot_y, _gap5, _top_gap5, _bottom_gap5 = _compute_caption_stack_layout(
+            title_vis_bot=title_vis_bot,
+            content_bottom=TIME_TOP,
+            blocks=_t5_blocks,
+            title_caption_gap_min=_title_caption_gap_min,
+            caption_time_gap_min=_caption_time_gap_min,
+            caption_gap_max=_caption_gap_max,
+            caption_gap_min=_caption_gap_min,
+            content_y_offset=config.get("content_y_offset", 0),
+        )
 
         _cur5 = first_dot_y
         for i, (lines, bh, first_lh, top_off) in enumerate(_t5_blocks):
@@ -898,7 +836,7 @@ def _draw_template5_content(base_image, txt_layer, draw,
             for line in lines:
                 tb = draw.textbbox((0, 0), line, font=item_font)
                 draw.text((content_x, ty), line, font=item_font, fill=TEXT_COLOR)
-                ty += (tb[3] - tb[1]) + line_gap
+                ty += (tb[3] - tb[1]) + line_gap_t5
 
             if i < len(_t5_blocks) - 1:
                 _next_lh = _t5_blocks[i+1][2]

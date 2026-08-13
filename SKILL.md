@@ -32,6 +32,14 @@ description: 直播物料准备与海报生成工具。用于银行螺丝钉直�
 - 具体：标题框左侧固定，只允许向右侧加宽，避免标题第二行只剩一个字或标点，**绝不靠缩小字号解决孤字**。模板1-5按当前 `template_config.py` 定版执行；横版模板6定版 `title_x=190`、`title_max_width=2200`、`title_font_size=180`，右侧仍需避开二维码框。`caption_max_width` 定版竖版t2/t3/t4=1950、横版t6=1950、模板5=1930；介绍文案默认 `caption_font_size=96` 且 `caption_min_font_size=96`。
 - **规则③（介绍文案内部间距）**：介绍文案之间的行间距必须保持一致，定版 `caption_item_gap_max=40`。文案内部间距必须小于或等于“标题到第一条文案”的间隙，也必须小于“最后一条文案到直播时间”的间隙；不能因为均分剩余空间把文案之间拉得比上下外部间隙还大。图1-4和图5必须使用同一视觉规则。生成前必须检查 `generate_image.py` 中图1-4通用逻辑的 `_gap_between` 上限仍为40，不能回到旧值120；`template_config.py` 中模板1-4的 `bullet_spacing` 初始值为144，不能回到旧值160。
 - **规则④（标题到介绍文案间隙）**：图1-4 的标题到介绍文案间隙不能贴得太近，必须和图5保持一致。定版：标题一行时 `title_caption_gap_min=90`；标题两行时 `title_caption_gap_min_two_lines=120`。若标题是一行，也不能把第一条介绍文案顶到标题下面；若标题是两行，必须主动拉开到至少120px，避免视觉上偏挤。
+- **规则⑤（两处外部留白自动适应，2026-08-10 更新）**：标题、介绍文案、直播时间之间共有两处外部留白，必须由 `generate_image.py` 的 `_compute_caption_stack_layout()` 按标题实际行数、标题视觉底部、介绍文案实际换行块高、内容区底线自动计算。禁止再用一次性 `content_y_offset` 或固定 `bullet_start_y` 作为常规方案手动凑位置。外部留白规则：标题→文案最小 90px，两行标题最小 120px；文案→时间最小 90px；文案内部间距范围 18~40px，且必须小于两处外部留白。图1-4、图5、图6都必须使用这套规则。
+  - 计算步骤：先计算标题换行后的视觉底部 `title_vis_bot`，再用 96 号文案和当前 `caption_max_width` 计算每条文案实际换行高度 `block_h`。
+  - 可用空间：`available = content_bottom - title_vis_bot`，其中 `content_bottom` 为直播时间上边界或模板配置的内容区底线。
+  - 文案整体高度：`caption_stack_h = sum(block_h) + internal_gap * (文案条数 - 1)`。
+  - 外部留白总量：`outside_total = available - caption_stack_h`。
+  - 若空间足够：`top_gap = title_caption_gap_min + extra / 2`，`bottom_gap = caption_time_gap_min + extra / 2`，多出来的空间平均分给上下两处外部留白。
+  - 若空间紧：优先把 `internal_gap` 从 40px 逐步压到 18px；仍不足时保持字号和文案完整，输出布局警告，不能自行把介绍文案压到 96 以下。
+  - 第一条文案圆点位置：`first_dot_y = title_vis_bot + top_gap + 第一条文案首行高度 / 2`。
 - `title_max_lines=1`（强制标题压一行、字号骤减）**只在用户当期明确要求时才用，绝不延续到其它期**；默认不传（=两行大字号）。
 
 **7. 模板5内容垂直位置（2026-07-06）**：config 加 `t5_content_shift`（默认0），标题+文案整体下移该像素数；当前 t5=30。
@@ -347,7 +355,7 @@ PY
 每次生成前必须自检：
 - 实际运行目录是 `/Users/fanlili/.codex/skills/live-poster-codex`，不是自动化备份目录里的旧副本
 - `template_config.py`：模板1-4 `bullet_spacing=144`
-- `generate_image.py`：图1-4 `_gap_between` 最大值为40，并且不大于标题到文案间隙
+- `generate_image.py`：必须存在 `_compute_caption_stack_layout()`；图1-4、图5、图6都通过它自动计算“标题→文案”和“文案→时间”两处外部留白；`_gap_between` 最大值为40，并且不大于两处外部留白
 - `template_config.py`：模板6 `title_max_width=2200`
 - 生成后至少检查横版标题行数，不能出现单字/标点独占一行
 
@@ -689,11 +697,11 @@ for tmpl_id in templates:
 
 ## content_y_offset（文案垂直位置偏移）
 
-- template_final: -30
-- template_2: -40
-- template_3: -40
-- template_4: -40
-- template_5: 0（固定y位置）
+`content_y_offset` 只允许作为用户当期明确要求的临时微调用；常规海报排版不得依赖它。2026-08-10 起，标题、介绍文案、直播时间之间的两处外部留白由 `_compute_caption_stack_layout()` 自动计算：
+- 标题到介绍文案：一行标题最小 90px，两行标题最小 120px
+- 介绍文案到直播时间/内容区底线：最小 90px
+- 介绍文案内部间距：18~40px，且必须小于外部留白
+- 图1-4、图5、图6使用同一视觉规则
 
 ## 已确认期数记录
 
