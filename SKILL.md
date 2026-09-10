@@ -1,6 +1,6 @@
 ---
 name: live-poster-codex
-description: 直播物料准备与海报生成工具。用于银行螺丝钉直播物料准备、飞书物料文档插入、二维码检测下载、生成4张海报（学院、新预告+企微朋友圈、无二维码、横版）、飞书共享空间上传、课程群及同步群通知、团队群定时通知。
+description: 直播物料准备与海报生成工具。用于银行螺丝钉直播物料准备、飞书物料文档插入、二维码检测下载、生成4张海报（学院、有二维码、无二维码、横版）、飞书共享空间上传、课程群及同步群通知、团队群定时通知。
 ---
 
 # 直播海报制作
@@ -16,15 +16,16 @@ description: 直播物料准备与海报生成工具。用于银行螺丝钉直�
 | template_id | 输出文件 | 二维码 | 关键词 |
 |---|---|---|---|
 | `template_final` | `{期数}期-学院.png` | 由直播链接自动生成 | 无 |
-| `template_5` | `{期数}期-有二维码.png` | 胡亮按发送顺序第 3 张 | 有 |
+| `template_5` | `{期数}期-有二维码.png` | 胡亮每期发出的唯一二维码（第 1 张） | 有 |
 | `template_no_qr` | `{期数}期-无二维码.png` | 无 | 无 |
 | `template_horizontal` | `{期数}期-横版.png` | 无 | 无 |
 
 - 学院和“有二维码”保持原模板和版式；“有二维码”沿用原“新预告+企微朋友圈”设计。原翻写、回放、预告+企微朋友圈、横版预告 4 张停止生成。
-- “无二维码”竖版的标题和介绍文案必须复用 `template_5` 的标题、文案坐标和自动外部留白规则。
-- “横版”使用 `template_new_horizontal.png`。该底图已删除交付样图的示例标题/介绍文案；主讲人、直播时间标签和获取链接等固定设计元素必须保留。
+- “无二维码”竖版的标题和介绍文案必须复用 `template_5` 的标题、文案坐标和自动外部留白规则。当前底图为用户在 2026-09-10 提供的最新版 `template_new_no_qr.png`（源文件：`20260910-无二维码.png`）。
+- “横版”使用用户在 2026-09-10 提供的最新版 `template_new_horizontal.png`（源文件：`20260910-横版.png`）。两张最新版底图与此前画布尺寸一致，因此**不改**标题、介绍文案、直播时间的坐标、字号和自动留白规则；主讲人、直播时间标签和获取链接等固定设计元素必须保留。
+- 最新横版底图保留了示例标题和介绍文案。生成 `template_horizontal` 前，必须按 `template_config.py` 的 `clear_placeholder_text_regions` 清除这两块示例区，再绘制动态内容；同时按 `restore_template_regions` 还原被示例区覆盖到的装饰元素。验收时不得出现示例文字重影、白色残边、边框缺口或被截断的装饰圆形。
 - 两张新图不传入、不下载、不绘制二维码和关键词。**直播时间仍必须填入两张新图的时间栏**，不能留下 `月 日（周 ）19:00` 或空白占位。
-- 仍需在 PPT 制作群按发送顺序识别胡亮的前 3 张图片，因为保留的 `template_5` 使用第 3 张。`check_qr_codes.py` 只下载 `qr_3_{期数}.png`；前两张只用于确定顺序。
+- 胡亮每期只发 1 张二维码；如由其代发机器人“真维斯”发送，也视为当期二维码。`check_qr_codes.py` 从胡亮本人或真维斯的独立图片、post 内嵌图片中下载为 `qr_1_{期数}.png`，仅供 `template_5`（有二维码）使用；学院图由直播链接生成二维码。
 - 海报生成后向用户窗口展示 4 张；内容小分队复核时先发复核文字，再发完整 4 张；共享空间上传 4 张。任何“6张/六张”历史指令均已废止。
 
 标准生成代码：
@@ -35,7 +36,7 @@ from generate_image import create_poster
 
 qr_map = {
     "template_final": None,
-    "template_5": f"qr_3_{issue}.png",
+    "template_5": f"qr_1_{issue}.png",
     "template_no_qr": None,
     "template_horizontal": None,
 }
@@ -94,7 +95,9 @@ for template_id, config in TEMPLATES_CONFIG.items():
 
 **9. 关键词颜色**：DATE_CODE_COLOR=(252,159,81)，5张关键词与各模板括号色一致、勿改。横版在白底上视觉偏浅是错觉，用户已确认保持不动。
 
-**10. 实际执行目录**：当前 Codex 实际运行工具目录为 `/Users/fanlili/.codex/skills/live-poster-codex`。备份目录只用于存档和分享，不作为生成海报的运行源；如果看到命令、metadata 或脚本默认值指向 `/Users/fanlili/Desktop/范丽丽./自动化备份/live-poster-tool` 这类旧备份路径，必须改用当前技能目录。
+**10. 实际执行目录**：以当前安装后的 `live-poster-codex` 技能目录为唯一运行源。备份目录只用于存档和分享，不作为生成海报的运行源；如果看到命令、metadata 或脚本默认值指向旧备份路径，必须改用当前技能目录。
+
+**11. 跨电脑路径规则（2026-09-10 新增）**：禁止把 `/Users/fanlili/...` 等个人绝对路径当成可复用命令。执行前按当前机器确定技能目录和 CLI：`SKILL_ROOT` 为当前 `SKILL.md` 所在目录，`LARK_CLI="${LARK_CLI:-$(command -v lark-cli)}"`。若 `LARK_CLI` 为空，先安装/配置 lark-cli，不能改用 user 身份绕过机器人流程。
 
 详细坑与校准脚本见 `memory/feedback_live_poster_layout.md` 和 `memory/feedback_live_poster_workflow.md`。
 
@@ -109,7 +112,7 @@ for template_id, config in TEMPLATES_CONFIG.items():
 - 机器人名称：直播物料小助手
 - App ID：`cli_a94b5144b1381cb3`
 - 本地 profile：`live-poster-bot`
-- 发送命令统一使用：`/Users/fanlili/.npm-global/bin/lark-cli --profile live-poster-bot ... --as bot`
+- 发送命令统一使用：`"$LARK_CLI" --profile live-poster-bot ... --as bot`
 
 适用范围：
 - 内容小分队 @汤爱学 / @郭凤强 复核：文字、post @、图片
@@ -132,7 +135,7 @@ for template_id, config in TEMPLATES_CONFIG.items():
 发 post 消息必须继续使用 at 标签，不能因为换成 bot 就写纯文字 @：
 
 ```bash
-/Users/fanlili/.npm-global/bin/lark-cli --profile live-poster-bot im +messages-send \
+"$LARK_CLI" --profile live-poster-bot im +messages-send \
   --as bot \
   --chat-id oc_xxx \
   --msg-type post \
@@ -142,8 +145,8 @@ for template_id, config in TEMPLATES_CONFIG.items():
 发送图片也使用 bot profile：
 
 ```bash
-/Users/fanlili/.npm-global/bin/lark-cli --profile live-poster-bot im images create --as bot --data '{"image_type":"message"}' --file "image=output/xxx.png"
-/Users/fanlili/.npm-global/bin/lark-cli --profile live-poster-bot im +messages-send --as bot --chat-id oc_xxx --image "{image_key}"
+"$LARK_CLI" --profile live-poster-bot im images create --as bot --data '{"image_type":"message"}' --file "image=output/xxx.png"
+"$LARK_CLI" --profile live-poster-bot im +messages-send --as bot --chat-id oc_xxx --image "{image_key}"
 ```
 
 发送后必须核验：
@@ -157,10 +160,10 @@ for template_id, config in TEMPLATES_CONFIG.items():
 群消息状态检查默认**不启用实时事件监听**。直播流程对汤爱学/郭凤强复核、胡亮二维码等消息的时效要求是半小时内抓到即可，因此使用稳定的轮询方式：
 
 - 默认每 30 分钟检查一次相关群最新消息
-- 统一使用 `直播物料小助手` bot 身份读取：`/Users/fanlili/.npm-global/bin/lark-cli --profile live-poster-bot im +chat-messages-list --as bot ...`
+- 统一使用 `直播物料小助手` bot 身份读取：`"$LARK_CLI" --profile live-poster-bot im +chat-messages-list --as bot ...`
 - 检查范围包括：
   - 内容小分队：汤爱学 / 郭凤强是否回复 `OK` / `ok` / `没问题`
-  - PPT制作群：胡亮是否发送三张二维码图片
+  - PPT制作群：胡亮是否发送当期唯一二维码图片
   - 后续流程中需要确认的其他群消息
 - 命中后继续下一步；未命中则 30 分钟后再查
 - 18:00 后仍未命中，停止自动轮询并告知用户手动确认
@@ -191,8 +194,8 @@ for template_id, config in TEMPLATES_CONFIG.items():
 海报生成后，如需发内容小分队复核：
 - 群：`oc_d49775cef6a606b893cdec743875be02`
 - 必须使用 post 格式 + at 标签 @复核人，纯文字 @ 不算
-- 汤爱学 open_id：`ou_e9a6dd9bd4ab1b8d65452635ef70c953`
-- 郭凤强 open_id：`ou_ac59bb01b7e830ae90f51515e0b54a07`
+- 汤爱学 open_id：`ou_ba13d1b5e4101351b7d15ba7a7b3729e`
+- 郭凤强 open_id：`ou_4dfd03cd1901b89f3080b4bd7b1c5845`
 - 发送顺序：先发复核文字，再发完整 4 张海报图片
 - 图片上传和发图都使用 `--profile live-poster-bot --as bot`
 
@@ -205,7 +208,7 @@ for template_id, config in TEMPLATES_CONFIG.items():
 2. 第二条：只发学院直播预告帖正文，必须 `--profile live-poster-bot --as bot`
 3. 第三条：紧接着发学院海报图片，上传图片和发送图片都必须 `--profile live-poster-bot --as bot`
 
-李菁 open_id：`ou_93a19e195953359b82d943d7dff11b87`
+李菁 open_id：`ou_c520057aa9bfb7a0aa4da3e23ee38ec9`
 
 三条发送完成后，必须逐条核验 sender：
 - `sender.sender_type` 必须为 `app`
@@ -224,7 +227,7 @@ for template_id, config in TEMPLATES_CONFIG.items():
 - 不 @ 夏雪，也不 @ 任何人；用户已明确更正为“直接发群，不用艾特任何人”。
 - 只同步 226课程群的第二条和第三条：学院直播预告帖正文 + 学院海报图片。
 - 不同步 226课程群第一条“菁宝@李菁”的内部安排通知。
-- 两条都必须使用 `/Users/fanlili/.npm-global/bin/lark-cli --profile live-poster-bot ... --as bot`。
+- 两条都必须使用 `"$LARK_CLI" --profile live-poster-bot ... --as bot`。
 - 学院海报图片沿用 `output/{期数}期-学院.png`；图片上传和发送图片都必须使用 bot profile。
 - 发送后必须逐条核验 sender：`sender.sender_type == "app"` 且 `sender.name == "直播物料小助手"`。
 - 如果同步群发送失败或 sender 不是 bot，必须暂停后续群发，说明已完成/未完成事项并询问用户，不得自行跳过。
@@ -243,13 +246,13 @@ for template_id, config in TEMPLATES_CONFIG.items():
 - 禁止出现“辅助”两个字。“辅助”只是内部排期说法，团队群通知里 3号/7号也只写“（回复用户提问）”，不要写“辅助”
 
 小助手 open_id 对照表：
-- 1号 李菁：`ou_93a19e195953359b82d943d7dff11b87`（团队群通知中不 @）
-- 3号 汤爱学：`ou_e9a6dd9bd4ab1b8d65452635ef70c953`
-- 5号 杜亚芳：`ou_edb1b102186805f9e1d0a41dd2eae6e8`
-- 6号 食米马伞：`ou_d62113f91cb152e6424966002d9a96ed`
-- 7号 范丽丽：`ou_2bd618ee347cc81fe4f1832ef1f35c91`
-- 8号 马丹：`ou_9fe12ae756fbc395316efdcf0ec1353d`
-- 9号 王恒一：`ou_98dc9bd42cce1710e7c12f6cf55c3694`
+- 1号 李菁：`ou_c520057aa9bfb7a0aa4da3e23ee38ec9`（团队群通知中不 @）
+- 3号 汤爱学：`ou_ba13d1b5e4101351b7d15ba7a7b3729e`
+- 5号 杜亚芳：`ou_b0cd33bf79e4b0c1554b3651409e5533`
+- 6号 食米马伞：`ou_315cdf115c7eb49017437a89dbd1719b`
+- 7号 范丽丽：`ou_fadeb61d474cca81b5198851d5b05c5c`
+- 8号 马丹：`ou_7af91266e3572b8042bf9512a90d9632`
+- 9号 王恒一：`ou_b63c75169eb46c54b65440736088476e`
 
 团队群通知职责文案定版：
 - 1号：红色（发PPT图片，控场，回复用户提问）
@@ -260,7 +263,7 @@ for template_id, config in TEMPLATES_CONFIG.items():
 
 macOS LaunchAgent 注意事项（2026-07-10 补充）：
 - LaunchAgent 的运行环境不会继承终端 PATH。脚本里必须显式加入：
-  `export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/fanlili/.npm-global/bin:/usr/bin:/bin:/usr/sbin:/sbin"`
+  `export PATH="/usr/local/bin:/opt/homebrew/bin:${HOME}/.npm-global/bin:/usr/bin:/bin:/usr/sbin:/sbin"`
 - 否则 `lark-cli` 可能因 shebang `env node` 找不到 `/usr/local/bin/node` 而失败，表现为定时任务触发了但没有发飞书消息，日志里会出现 `env: node: No such file or directory`。
 - **北京时间硬校验（2026-07-28 新增，最高优先级）**：团队群 17:00 通知的业务时间永远是北京时间。LaunchAgent / Cron / 本机时区都只能作为“唤醒器”，不能作为最终发送依据。发送脚本在任何飞书发送动作之前，必须用 `Asia/Shanghai` 目标时间计算绝对 epoch：
   - 若当前时间早于目标北京时间：脚本必须 sleep 到目标时间后再发送，不能直接退出，也不能提前发送。
@@ -768,6 +771,7 @@ for tmpl_id in templates:
 
 ## 已确认期数记录
 
+- 473期（9月11日）- 已确认（共享空间、群通知已完成；团队群 17:00 北京时间通知已创建，待触发）
 - 464期（7月28日）- 已确认
 - 463期（7月24日）- 已确认
 - 462期（7月21日）- 已确认（团队群17:00通知漏建，17:25已补发并复盘）
@@ -789,9 +793,9 @@ for tmpl_id in templates:
 - 441期（3月24日）- 已确认
 - 440期（3月20日）- 已测试确认流程
 
-**当前最新期数：464**
-- 检测到比 464 更高的期数才触发生成（如 465...）
-- 低于或等于 464 的期数不重复生成
+**当前最新期数：473**
+- 检测到比 473 更高的期数才触发生成（如 474...）
+- 低于或等于 473 的期数不重复生成
 
 **模板五更新记录**：
 - 2026-04-22：用新参考图替换模板五，更新了参数配置

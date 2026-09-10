@@ -26,7 +26,7 @@ TEMPLATES_CONFIG = {
         "suffix": "-学院",
     },
 
-    # Existing poster retained unchanged. It uses Hu Liang's third QR image.
+    # Existing poster retained unchanged. It uses Hu Liang's sole QR image.
     "template_5": {
         "name": "有二维码",
         "path": "template_new_5.png",
@@ -89,6 +89,14 @@ TEMPLATES_CONFIG = {
         "title_x": 190,
         "title_y": 219,
         "title_max_width": 1980,
+        "balance_two_line_title": True,
+        # The 2026-09-10 supplied horizontal background retains sample text.
+        # Clear only those two left-side sample-text areas before drawing live data.
+        "clear_placeholder_text_regions": [
+            [120, 120, 2050, 540],
+            [120, 670, 1850, 570],
+        ],
+        "restore_template_regions": [[2050, 50, 190, 160]],
         "caption_max_width": 1900,
         "caption_item_gap_max": 40,
         "caption_item_gap_min": 18,

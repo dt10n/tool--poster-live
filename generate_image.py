@@ -227,7 +227,41 @@ def wrap_text(text, font, max_width):
 
     return lines
 
-def get_best_font_and_lines(text, initial_size, max_width, max_lines, font_path):
+def _balance_two_line_title(text, font, max_width, lines):
+    """Rebalance an automatically wrapped two-line title without changing font size."""
+    if len(lines) != 2 or "\n" in text:
+        return lines
+
+    forbidden_line_start = "，。！？；：”）》】」』%－-"
+    forbidden_split_pairs = {"%", "-", "－"}
+    candidates = []
+    for index in range(1, len(text)):
+        left, right = text[:index], text[index:]
+        if right[0] in forbidden_line_start or left[-1] in forbidden_split_pairs:
+            continue
+        left_width = font.getlength(left)
+        right_width = font.getlength(right)
+        if left_width <= max_width and right_width <= max_width:
+            candidates.append((abs(left_width - right_width), left, right))
+
+    if not candidates:
+        return lines
+
+    # Prefer starting a numeric expression on the new line. This keeps titles such
+    # as "获得7%-8%的年化" intact instead of splitting a Chinese verb in half.
+    numeric_starts = [
+        candidate for candidate in candidates
+        if candidate[2][0].isdigit() and not candidate[1][-1].isdigit()
+    ]
+    if numeric_starts:
+        _, left, right = min(numeric_starts, key=lambda candidate: candidate[0])
+        return [left, right]
+
+    _, left, right = min(candidates, key=lambda candidate: candidate[0])
+    return [left, right]
+
+
+def get_best_font_and_lines(text, initial_size, max_width, max_lines, font_path, balance_two_line=False):
     """
     动态计算最合适的字号，确保文本在限定行数内显示。
     """
@@ -241,6 +275,8 @@ def get_best_font_and_lines(text, initial_size, max_width, max_lines, font_path)
             
         lines = wrap_text(text, font, max_width)
         if len(lines) <= max_lines:
+            if balance_two_line:
+                lines = _balance_two_line_title(text, font, max_width, lines)
             return font, lines
         current_size -= 4 # 步进减小字号
     
@@ -310,6 +346,16 @@ def _compute_caption_stack_layout(
     first_dot_y = title_vis_bot + top_gap + blocks[0][2] // 2 + content_y_offset
     return first_dot_y, internal_gap, top_gap, bottom_gap
 
+def _clear_template_placeholder_text(image, regions):
+    """Clear only the colored sample title/captions retained in a delivered template."""
+    draw = ImageDraw.Draw(image)
+    for x, y, region_width, region_height in regions:
+        draw.rectangle(
+            [x, y, x + region_width, y + region_height],
+            fill=(255, 255, 255, 255),
+        )
+
+
 def create_poster(template_path, output_path, qr_image_path, title, caption_list, live_time, template_id="template_final", date_code="", live_link=None, feishu_qr_images=None, title_max_lines=2):
     """
     根据内容生成海报图片。
@@ -320,7 +366,7 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         title = re.sub(r'(.)\1+', r'\1', title)  # 连续重复字符去重
     
     # ── QR 图片选择规则 ──
-    # 学院：由 live_link 自动生成；保留的新预告+企微朋友圈使用胡亮第3张图。
+    # 学院：由 live_link 自动生成；有二维码图使用胡亮发的唯一二维码。
     # 两张 2026-09 新模板没有二维码框，永远不读取或绘制二维码。
     _qr_path = qr_image_path
     if template_id == "template_final" and live_link:
@@ -330,8 +376,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             _qr_path = _auto_qr
         except Exception as e:
             print(f"自动生成二维码失败: {e}")
-    elif template_id == "template_5" and feishu_qr_images and len(feishu_qr_images) >= 3:
-        _qr_path = feishu_qr_images[2]
+    elif template_id == "template_5" and feishu_qr_images:
+        _qr_path = feishu_qr_images[0]
     qr_image_path = _qr_path  # 覆盖原参数
 
     # 自动从 live_time 推导 date_code（YYMMDD格式，如2026"7月9日" → "260709"；年份用当前年后两位）
@@ -376,6 +422,13 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             qr_box_x, qr_box_y, qr_box_w, qr_box_h = 948, 3380, 520, 560
             
         base_image = Image.open(template_path).convert("RGBA")
+        placeholder_regions = config.get("clear_placeholder_text_regions") if config else None
+        if placeholder_regions:
+            original_template = base_image.copy()
+            _clear_template_placeholder_text(base_image, placeholder_regions)
+            for x, y, region_width, region_height in config.get("restore_template_regions", []):
+                restored = original_template.crop((x, y, x + region_width, y + region_height))
+                base_image.alpha_composite(restored, (x, y))
         template_img = base_image.copy().convert("RGB")  # 保留模板原像素用于还原
 
         if template_id == "template_final" and auto_layout:
@@ -526,7 +579,14 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     # template_5 风格使用专用函数，保证新无二维码竖版与它完全同版式。
     use_template5_layout = bool(config and config.get("content_layout") == "template5")
     if not use_template5_layout:
-        title_font, title_lines = get_best_font_and_lines(title, title_font_size_cfg, title_max_width, title_max_lines, bold_font_path)
+        title_font, title_lines = get_best_font_and_lines(
+            title,
+            title_font_size_cfg,
+            title_max_width,
+            title_max_lines,
+            bold_font_path,
+            balance_two_line=bool(config and config.get("balance_two_line_title")),
+        )
 
         # 绘制标题
         current_y = title_pos_y
