@@ -1,15 +1,61 @@
 ---
 name: live-poster-codex
-description: 直播物料准备与海报生成工具。用于银行螺丝钉直播物料准备、飞书物料文档插入、二维码检测下载、生成6张海报（学院、翻写、回放、预告+企微、新预告+企微、横版预告）、飞书共享空间上传、课程群及同步群通知、团队群定时通知。
+description: 直播物料准备与海报生成工具。用于银行螺丝钉直播物料准备、飞书物料文档插入、二维码检测下载、生成4张海报（学院、新预告+企微朋友圈、无二维码、横版）、飞书共享空间上传、课程群及同步群通知、团队群定时通知。
 ---
 
 # 直播海报制作
 
-根据直播链接、飞书大纲文档和群内二维码信息生成6张直播海报，并完成物料文档、飞书上传、课程群及同步群通知和团队定时通知流程。
+根据直播链接、飞书大纲文档和群内二维码信息生成4张直播海报，并完成物料文档、飞书上传、课程群及同步群通知和团队定时通知流程。
 
-> ⚠️ **本文档下方部分历史内容（关键词4位示例、旧二维码映射）已过时，以下「最新定版」为准。**
+> ⚠️ **本文档下方部分历史内容（6图、旧二维码映射、4位关键词示例）已过时，以下「当前四图定版」为准。遇到冲突时绝不执行历史内容。**
 
-## 🔴 最新定版（2026-06，458期起，优先级最高）
+## 🔴 当前四图定版（2026-09-10，优先级最高）
+
+每期只生成、展示、复核和上传以下 4 张海报，顺序固定：
+
+| template_id | 输出文件 | 二维码 | 关键词 |
+|---|---|---|---|
+| `template_final` | `{期数}期-学院.png` | 由直播链接自动生成 | 无 |
+| `template_5` | `{期数}期-有二维码.png` | 胡亮按发送顺序第 3 张 | 有 |
+| `template_no_qr` | `{期数}期-无二维码.png` | 无 | 无 |
+| `template_horizontal` | `{期数}期-横版.png` | 无 | 无 |
+
+- 学院和“有二维码”保持原模板和版式；“有二维码”沿用原“新预告+企微朋友圈”设计。原翻写、回放、预告+企微朋友圈、横版预告 4 张停止生成。
+- “无二维码”竖版的标题和介绍文案必须复用 `template_5` 的标题、文案坐标和自动外部留白规则。
+- “横版”使用 `template_new_horizontal.png`。该底图已删除交付样图的示例标题/介绍文案；主讲人、直播时间标签和获取链接等固定设计元素必须保留。
+- 两张新图不传入、不下载、不绘制二维码和关键词。**直播时间仍必须填入两张新图的时间栏**，不能留下 `月 日（周 ）19:00` 或空白占位。
+- 仍需在 PPT 制作群按发送顺序识别胡亮的前 3 张图片，因为保留的 `template_5` 使用第 3 张。`check_qr_codes.py` 只下载 `qr_3_{期数}.png`；前两张只用于确定顺序。
+- 海报生成后向用户窗口展示 4 张；内容小分队复核时先发复核文字，再发完整 4 张；共享空间上传 4 张。任何“6张/六张”历史指令均已废止。
+
+标准生成代码：
+
+```python
+from template_config import TEMPLATES_CONFIG
+from generate_image import create_poster
+
+qr_map = {
+    "template_final": None,
+    "template_5": f"qr_3_{issue}.png",
+    "template_no_qr": None,
+    "template_horizontal": None,
+}
+for template_id, config in TEMPLATES_CONFIG.items():
+    create_poster(
+        template_path=config["path"],
+        output_path=f"output/{issue}期{config['suffix']}.png",
+        qr_image_path=qr_map[template_id],
+        title=data["title"],
+        caption_list=data["captions"],
+        live_time=live_time_formatted,
+        template_id=template_id,
+        date_code=data["date_code"],
+        live_link=data["link"],
+    )
+```
+
+## 历史版式与流程记录（只作追溯，不可执行）
+
+### 旧版定版（2026-06，已废止）
 
 **1. 关键词改为6位**：格式 `2位年+2位月+2位日`（如 2026年6月30日→`260630`），旧的4位（月+日）已废弃。三处必须一致：海报上显示、小鹅通后台回复关键词、发胡亮消息里的「关键词」。
 
@@ -29,7 +75,7 @@ description: 直播物料准备与海报生成工具。用于银行螺丝钉直�
 
 - **规则①（勿擅改最小字号）**：任何情况下，标题和介绍文案的**最小字号规则都不允许擅自改动**。确有必要改动时，**必须先经人工（用户）同意**，不得自行缩小。—— 曾发生：把456的一次性"标题压一行(title_max_lines=1)"延续到458，导致标题被压小，用户强烈不满。
 - **规则②（单字落单先改行宽）**：遇到"单行只剩一个字"（孤字），**优先加宽该行的行宽**（标题改 `title_max_width`、文案改 `caption_max_width`，让该行能多容纳、把孤字带上来或整句排一行），**绝不靠缩小字号来解决**。
-- 具体：标题框左侧固定，只允许向右侧加宽，避免标题第二行只剩一个字或标点，**绝不靠缩小字号解决孤字**。模板1-5按当前 `template_config.py` 定版执行；横版模板6定版 `title_x=190`、`title_max_width=2200`、`title_font_size=180`，右侧仍需避开二维码框。`caption_max_width` 定版竖版t2/t3/t4=1950、横版t6=1950、模板5=1930；介绍文案默认 `caption_font_size=96` 且 `caption_min_font_size=96`。
+- 具体：标题框左侧固定，只允许向右侧加宽，避免标题第二行只剩一个字或标点，**绝不靠缩小字号解决孤字**。当前活动竖版标题宽度为2110、横版标题为 `title_x=190` / `title_max_width=1980` / `title_font_size=180`；介绍文案默认 `caption_font_size=96` 且 `caption_min_font_size=96`。
 - **规则③（介绍文案内部间距）**：介绍文案之间的行间距必须保持一致，定版 `caption_item_gap_max=40`。文案内部间距必须小于或等于“标题到第一条文案”的间隙，也必须小于“最后一条文案到直播时间”的间隙；不能因为均分剩余空间把文案之间拉得比上下外部间隙还大。图1-4和图5必须使用同一视觉规则。生成前必须检查 `generate_image.py` 中图1-4通用逻辑的 `_gap_between` 上限仍为40，不能回到旧值120；`template_config.py` 中模板1-4的 `bullet_spacing` 初始值为144，不能回到旧值160。
 - **规则④（标题到介绍文案间隙）**：图1-4 的标题到介绍文案间隙不能贴得太近，必须和图5保持一致。定版：标题一行时 `title_caption_gap_min=90`；标题两行时 `title_caption_gap_min_two_lines=120`。若标题是一行，也不能把第一条介绍文案顶到标题下面；若标题是两行，必须主动拉开到至少120px，避免视觉上偏挤。
 - **规则⑤（两处外部留白自动适应，2026-08-10 更新）**：标题、介绍文案、直播时间之间共有两处外部留白，必须由 `generate_image.py` 的 `_compute_caption_stack_layout()` 按标题实际行数、标题视觉底部、介绍文案实际换行块高、内容区底线自动计算。禁止再用一次性 `content_y_offset` 或固定 `bullet_start_y` 作为常规方案手动凑位置。外部留白规则：标题→文案最小 90px，两行标题最小 120px；文案→时间最小 90px；文案内部间距范围 18~40px，且必须小于两处外部留白。图1-4、图5、图6都必须使用这套规则。
@@ -147,7 +193,7 @@ description: 直播物料准备与海报生成工具。用于银行螺丝钉直�
 - 必须使用 post 格式 + at 标签 @复核人，纯文字 @ 不算
 - 汤爱学 open_id：`ou_e9a6dd9bd4ab1b8d65452635ef70c953`
 - 郭凤强 open_id：`ou_ac59bb01b7e830ae90f51515e0b54a07`
-- 发送顺序：先发复核文字，再发 6 张海报图片
+- 发送顺序：先发复核文字，再发完整 4 张海报图片
 - 图片上传和发图都使用 `--profile live-poster-bot --as bot`
 
 ### 4. 226课程群必须严格三步
@@ -370,9 +416,9 @@ PY
 
 每次生成前必须自检：
 - 实际运行目录是 `/Users/fanlili/.codex/skills/live-poster-codex`，不是自动化备份目录里的旧副本
-- `template_config.py`：模板1-4 `bullet_spacing=144`
-- `generate_image.py`：必须存在 `_compute_caption_stack_layout()`；图1-4、图5、图6都通过它自动计算“标题→文案”和“文案→时间”两处外部留白；`_gap_between` 最大值为40，并且不大于两处外部留白
-- `template_config.py`：模板6 `title_max_width=2200`
+- `template_config.py`：活动模板只能是 `template_final`、`template_5`、`template_no_qr`、`template_horizontal`；不能误把停用的旧模板重新加入生成循环
+- `generate_image.py`：必须存在 `_compute_caption_stack_layout()`；4 张活动模板都通过它自动计算“标题→文案”和“文案→时间”两处外部留白；内部间距最大值为40，并且不大于两处外部留白
+- `template_config.py`：横版 `template_horizontal` 的标题框左侧固定 `title_x=190`、最大宽度 `1980`，不靠缩字号消除孤字
 - 生成后至少检查横版标题行数，不能出现单字/标点独占一行
 
 ### 10. 2026-07-21 最近问题复盘与防错清单（462期后补充）
@@ -439,7 +485,7 @@ PY
 
 ---
 
-## 自动化工作流
+## 历史自动化流程（已废止，不可执行）
 
 ### 定时检测
 
@@ -502,7 +548,7 @@ img = qr.make_image(fill_color="black", back_color="white")
 img.save("qr_link.png")
 ```
 
-### 5. 生成海报（历史示例，正式流程按顶部最新定版生成6张）
+### 5. 生成海报（历史示例，已废止；正式流程只执行顶部四图定版）
 
 ```python
 import sys
@@ -558,12 +604,12 @@ for tmpl_id in templates:
 请回复「1」或「确认」或「ok」继续后续操作～
 ```
 
-2. 然后依次发送6张海报图片：
+2. 历史版本曾发送多张海报图片；现在只按顶部四图定版展示四张：
    - 学院（template_final）
-   - 预告+企微朋友圈（template_2）
-   - 回放（template_3）
-   - 翻写（template_4）
-   - 螺丝钉上（template_5）
+   - 学院（template_final）
+   - 有二维码（template_5）
+   - 无二维码（template_no_qr）
+   - 横版（template_horizontal）
 
 3. **等待你确认** - 收到你的回复（1/确认/ok）后，继续执行下一步
 
@@ -572,7 +618,7 @@ for tmpl_id in templates:
 1. **上传到飞书共享文档**：
    - 飞书共享文档目录：`https://epndqwwg0a.feishu.cn/drive/folder/MplmffLghlQ17Rd7blbcL6Umnhe`
    - 在该目录下找到对应期数的文件夹（如 `441-20260324`）
-   - 上传6张海报到该文件夹
+   - 上传顶部四图定版的4张海报到该文件夹
 
 2. **发送通知**：
    - 发给你确认
@@ -590,10 +636,10 @@ for tmpl_id in templates:
 1. **标题**：字号自适应，字数多则自动调小，最多2行
 2. **介绍文案**：字号根据字数多少自适应，字数多字号小，最多2行
 3. **点点位置**：和文案整体居中对齐，再往下挪20px
-4. **模板配置**：template_config.py 中已配置好5个模板的位置参数
+4. **模板配置**：template_config.py 中当前只配置4个活动模板的位置参数
 5. **标题去重**：自动去除标题中连续重复字符（如"该该"->"该"）
 
-## 模板五（预告）视觉规范（2026-04-20固化，长期复用）
+## 历史模板五（预告）视觉规范（已废止，不可执行）
 
 **这是模板五的标准样式，以444期为基准确认。后续生成必须严格遵循此规范。**
 
@@ -653,7 +699,7 @@ for tmpl_id in templates:
 - 兜底字体：Noto Sans CJK（`/usr/share/fonts/opentype/noto/NotoSansCJK-*.ttc`）
 - generate_image.py 中已配置自动回退逻辑
 
-## 模板五布局参数（template_config.py 中已配置，直接复用）
+## 历史模板五布局参数（已废止，不可执行）
 
 **这是模板五的标准样式，以444期为基准确认。后续生成必须严格遵循此规范。**
 
@@ -718,7 +764,7 @@ for tmpl_id in templates:
 - 标题到介绍文案：一行标题最小 90px，两行标题最小 120px
 - 介绍文案到直播时间/内容区底线：最小 90px
 - 介绍文案内部间距：18~40px，且必须小于外部留白
-- 图1-4、图5、图6使用同一视觉规则
+- 当前四图均使用同一视觉规则
 
 ## 已确认期数记录
 

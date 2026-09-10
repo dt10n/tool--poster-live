@@ -320,10 +320,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         title = re.sub(r'(.)\1+', r'\1', title)  # 连续重复字符去重
     
     # ── QR 图片选择规则 ──
-    # template_final（模板1/学院）: 用 live_link 自动生成真实二维码
-    # template_2/3/5: 用 feishu_qr_images[0]（群里第一个二维码）
-    # template_4: 用 feishu_qr_images[1]（群里第二个二维码）
-    # 以上均优先于传入的 qr_image_path
+    # 学院：由 live_link 自动生成；保留的新预告+企微朋友圈使用胡亮第3张图。
+    # 两张 2026-09 新模板没有二维码框，永远不读取或绘制二维码。
     _qr_path = qr_image_path
     if template_id == "template_final" and live_link:
         _auto_qr = output_path + "_auto_qr.png"
@@ -332,12 +330,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
             _qr_path = _auto_qr
         except Exception as e:
             print(f"自动生成二维码失败: {e}")
-    elif template_id in ("template_2", "template_3", "template_5") and feishu_qr_images and len(feishu_qr_images) >= 1:
-        _qr_path = feishu_qr_images[0]
-    elif template_id == "template_4" and feishu_qr_images and len(feishu_qr_images) >= 2:
-        _qr_path = feishu_qr_images[1]
-    elif template_id == "template_4" and feishu_qr_images and len(feishu_qr_images) >= 1:
-        _qr_path = feishu_qr_images[0]  # 如果只有1个，退回第一个
+    elif template_id == "template_5" and feishu_qr_images and len(feishu_qr_images) >= 3:
+        _qr_path = feishu_qr_images[2]
     qr_image_path = _qr_path  # 覆盖原参数
 
     # 自动从 live_time 推导 date_code（YYMMDD格式，如2026"7月9日" → "260709"；年份用当前年后两位）
@@ -363,7 +357,11 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         auto_layout = False
         if config:
             template_path = config['path']
-            qr_box_x, qr_box_y, qr_box_w, qr_box_h = config['qr_box']
+            qr_box = config.get('qr_box')
+            if qr_box:
+                qr_box_x, qr_box_y, qr_box_w, qr_box_h = qr_box
+            else:
+                qr_box_x = qr_box_y = qr_box_w = qr_box_h = None
             date_code_box = config.get('date_code_box')
             time_box = config.get('time_box')
             bullet_dot_x_cfg = config.get('bullet_dot_x')
@@ -525,8 +523,9 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     title_vis_bot = None   # 标题视觉底部y，绘制后赋值
 
     # 4.1 绘制标题（自适应字号与换行）
-    # template_5 使用专用函数 _draw_template5_content，此处跳过
-    if template_id != "template_5":
+    # template_5 风格使用专用函数，保证新无二维码竖版与它完全同版式。
+    use_template5_layout = bool(config and config.get("content_layout") == "template5")
+    if not use_template5_layout:
         title_font, title_lines = get_best_font_and_lines(title, title_font_size_cfg, title_max_width, title_max_lines, bold_font_path)
 
         # 绘制标题
@@ -568,8 +567,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
 
     final_item_font = _load_font(regular_font_path, best_size)
 
-    # template_5 由 _draw_template5_content 专用函数处理，跳过通用循环
-    _caption_list_to_draw = [] if template_id == "template_5" else caption_list
+    # template_5 风格由专用函数处理，跳过通用循环。
+    _caption_list_to_draw = [] if use_template5_layout else caption_list
 
     # ── 预计算文案块，并根据标题/文案/时间边界自动分配上下两个留白 ──
     _cap_blocks = _measure_caption_blocks(
@@ -650,10 +649,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     box_h = box_y2 - box_y1
 
     # ① 用白色精确覆盖胶囊内的占位文字
-    # 对模板1-4: 占位文字实测 x=1030~2150，左边留130px不碰圆弧
-    # 对模板5:  time_box已精确到文字区，直接用 box_x1
-    if template_id in ("template_5", "template_6"):
-        # template_5/6: time_box 已精确到文字区，直接用 box 边界
+    # 旧学院模板保留右侧胶囊的安全边界；其余活动模板给出精确文字区。
+    if config and config.get("time_cover_mode") == "full_box":
         cover_x1 = box_x1
         cover_x2 = box_x2
     else:
@@ -688,7 +685,7 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     draw.text((text_x, text_y), live_time, font=time_font, fill=TIME_COLOR)
     
     # 4.4 绘制二维码
-    if qr_image_path and template_id in ("template_final", "template_2", "template_3", "template_4", "template_5", "template_6"):
+    if qr_image_path and qr_box_x is not None:
         try:
             qr_img = Image.open(qr_image_path).convert("RGBA")
             # 保持正方形：取短边，居中裁剪后填满 qr_box
@@ -712,8 +709,8 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
         except Exception as e:
             print(f"二维码绘制失败: {e}")
 
-    # 4.5 模板五专用内容绘制（独立布局，覆盖前面通用逻辑的空白区域）
-    if template_id == "template_5":
+    # 4.5 模板五风格的专用内容绘制（新无二维码竖版复用该版式）
+    if use_template5_layout:
         _draw_template5_content(
             base_image, txt_layer, draw,
             title, caption_list, date_code,

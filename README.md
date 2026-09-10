@@ -1,107 +1,93 @@
-# 直播海报生成工具 — Codex 操作说明（自包含）
+# 直播海报生成工具
 
-银行螺丝钉直播海报生成器。输入标题/介绍文案/关键词/直播链接/二维码，输出 6 张海报。
-本包自带全部代码、模板图、字体，**离线可跑**，无需联网、无需飞书。
+银行螺丝钉直播海报生成器。输入直播标题、介绍文案、直播时间、直播链接和胡亮的二维码消息，输出 4 张海报。
 
-给同事安装和配置飞书机器人的详细教程见：[COLLEAGUE_GUIDE.md](COLLEAGUE_GUIDE.md)
+给同事安装并配置飞书机器人的完整流程，见 [COLLEAGUE_GUIDE.md](COLLEAGUE_GUIDE.md)。
 
----
-
-## 一、环境
+## 环境
 
 ```bash
-pip install pillow        # 唯一依赖（PIL）
+pip install pillow
 ```
-Python 3.8+。字体（NotoSansCJK-Bold/Regular.ttc）已随包，放在与 generate_image.py 同目录，自动加载。
 
-## 二、6 张海报是什么
+Python 3.8+。包内自带 NotoSansCJK 字体，离线生成海报不需要联网。
 
-| template_id | 输出后缀 | 用途 | 关键词 | 二维码 |
+## 四张海报
+
+| template_id | 输出后缀 | 动态内容 | 二维码 | 关键词 |
 |---|---|---|---|---|
-| template_final | -学院 | 学院预告 | 无 | 由直播链接自动生成 |
-| template_2 | -翻写 | 翻写文 | 有 | 群里第1张 |
-| template_3 | -回放 | 回放 | 有 | 群里第1张 |
-| template_4 | -预告+企微朋友圈 | 预告 | 有 | 群里第2张 |
-| template_5 | -新预告+企微朋友圈 | 新预告 | 有 | 群里第3张 |
-| template_6 | -横版预告 | 横版 | 有 | 群里第2张 |
+| `template_final` | `-学院` | 标题、介绍文案、直播时间 | 由直播链接自动生成 | 无 |
+| `template_5` | `-有二维码` | 标题、介绍文案、直播时间 | 胡亮第 3 张图 | 有 |
+| `template_no_qr` | `-无二维码` | 标题、介绍文案、直播时间 | 无 | 无 |
+| `template_horizontal` | `-横版` | 标题、介绍文案、直播时间 | 无 | 无 |
 
-（学院那张不含关键词，二维码由 `live_link` 自动生成；其余 5 张需传入二维码图片路径。）
+“有二维码”沿用原“新预告+企微朋友圈”模板。新竖版“无二维码”的标题和介绍文案位置与它完全一致。横版模板已去除交付样图中的示例标题和文案，保留主讲人、直播时间和获取链接等固定设计元素。
 
-## 三、快速生成 6 张（复制即用）
+## 快速生成四张
 
 ```python
-import sys, os
-TOOL = os.path.dirname(os.path.abspath(__file__))   # 本包目录
-os.chdir(TOOL)                                       # 必须！模板是相对路径
+import os
+import sys
+
+TOOL = os.path.dirname(os.path.abspath(__file__))
+os.chdir(TOOL)
 sys.path.insert(0, TOOL)
+
 from generate_image import create_poster
 from template_config import TEMPLATES_CONFIG
 
-issue     = "459"
-title     = "螺丝钉红利星级来啦，该怎么用？"          # 一句话标题
-captions  = [                                        # 4 句介绍文案
-    "近期，红利品种和大盘的相关性为啥变小？",
-    "螺丝钉红利星级是啥，如何查询？",
-    "红利指数经历了几轮跑输跑赢，长期表现如何？",
-    "红利品种，该如何投资呢？",
+issue = "469"
+title = "成长、价值风格轮动，我们该如何投资？"
+captions = [
+    "成长、价值，为啥会有风格轮动？",
+    "不同风格，各自有啥特点和代表品种？",
+    "成长、价值风格的长期表现如何？",
+    "风格轮动下，我们该如何投资？",
 ]
-live_time = "7月7日（周二）19:00"                     # 固定这个格式
-date_code = "260707"                                 # 关键词：2位年+2位月+2位日（见规则）
-link      = "https://n6o8y.xetslk.com/sl/xxxx"       # 小鹅通直播链接
+live_time = "9月15日（周二）19:00"
+date_code = "260915"
+live_link = "https://n6o8y.xetslk.com/sl/xxxx"
 
-# 二维码：胡亮发的 3 张，命名 qr_1_{issue}.png / qr_2 / qr_3，放在本包目录
-qr1 = f"{TOOL}/qr_1_{issue}.png"
-qr2 = f"{TOOL}/qr_2_{issue}.png"
-qr3 = f"{TOOL}/qr_3_{issue}.png"
+# 只需要胡亮发的第3张二维码。check_qr_codes.py 会按顺序识别它。
 qr_map = {
-    "template_final": None,   # 学院：链接自动生成
-    "template_2": qr1, "template_3": qr1,
-    "template_4": qr2, "template_6": qr2,
-    "template_5": qr3,
+    "template_final": None,
+    "template_5": f"{TOOL}/qr_3_{issue}.png",  # 输出：{期数}期-有二维码.png
+    "template_no_qr": None,
+    "template_horizontal": None,
 }
 
 os.makedirs(f"{TOOL}/output", exist_ok=True)
-for tpl, cfg in TEMPLATES_CONFIG.items():
-    out = f"{TOOL}/output/{issue}期{cfg['suffix']}.png"
+for template_id, config in TEMPLATES_CONFIG.items():
+    output_path = f"{TOOL}/output/{issue}期{config['suffix']}.png"
     create_poster(
-        template_path=cfg["path"], output_path=out,
-        qr_image_path=qr_map[tpl],
-        title=title, caption_list=captions,
-        live_time=live_time, template_id=tpl,
-        date_code=date_code, live_link=link,
+        template_path=config["path"],
+        output_path=output_path,
+        qr_image_path=qr_map[template_id],
+        title=title,
+        caption_list=captions,
+        live_time=live_time,
+        template_id=template_id,
+        date_code=date_code,
+        live_link=live_link,
     )
-    print("done:", out)
 ```
 
-## 四、关键规则（必须遵守，别踩坑）
+## 版式规则
 
-**1. 关键词 6 位**：格式 = **2位年 + 2位月 + 2位日**，如 2026年7月7日 → `260707`。旧的 4 位（月+日）已废弃。此关键词是小鹅通后台的"回复关键词"，海报上显示的必须和后台配置一致。
+- 标题设计字号：竖版 148，横版 180；默认最多两行。
+- 介绍文案字号：96，最小也是 96；不得为了排版自行缩小字体。
+- 遇到孤字或孤标点，先向右加宽标题/文案框，左侧固定，不缩小字号。
+- 介绍文案内部间距范围 18-40px，且小于标题到文案、文案到直播时间的外部留白。
+- 标题、介绍文案、直播时间的两处外部留白由生成代码按实际文字高度自动计算。
+- 两张新图不绘制二维码和关键词；直播时间仍填入模板的时间栏。
 
-**2. 标题 / 文案字号 —— 不许擅自缩小（最高优先级）**
-- 设计字号：**竖版标题 148、横版标题 180、介绍文案默认 96 且最小 96（横竖版都不低于 96）**。
-- **后续没有用户特殊说明时，不压缩字体；要改最小字号，必须先经人工同意。**
-- **遇到"单行只剩一个字"（孤字）：优先加宽该行行宽**（标题改模板配置 `title_max_width`、文案改 `caption_max_width`），**绝不靠缩字号解决**。
-- **介绍文案内部间距最多 40px**，且必须小于或等于标题到第一条文案、最后一条文案到直播时间的外部间隙。
-- `title_max_lines=1`（强制标题压成一行、字号骤减）**默认不要传**；只有用户当期明确说"标题压一行"时才传，且不得延续到其它期。
+## 文件清单
 
-**3. 模板配置已像素级校准，勿擅改**：`template_config.py` 里的 `date_code_box`（关键词框）、`qr_box`（二维码框）、`caption_max_width`、`title_max_width` 等都是逐张实测校准的，不要动。若更换模板图（template_new_*.png），必须重新校准 `date_code_box` 和 `qr_box` 两项（检测橙色括号得关键词框、检测浅色边框得二维码框）。
-
-**4. 标题可手动换行**：`title` 里插 `\n` 可强制换行。默认不用，让它自动两行大字号。
-
-**5. 二维码静默区**：如需用 `qr_generator.generate_qr_image(url)` 生成二维码，其内部 `quiet=1`（不是默认 4），勿改，否则二维码视觉偏小。
-
-## 五、文件清单
-
-- `generate_image.py`   海报绘制核心（create_poster）
-- `template_config.py`  6 个模板的坐标/字号配置（已校准）
-- `qr_generator.py`     从链接生成二维码（quiet=1）
-- `check_qr_codes.py`   （可选）从飞书群下载胡亮发的二维码，需飞书环境，Codex 一般用不到
-- `smart_parser.py`     （可选）解析群通告文本
-- `template_new_1~6.png`  6 张模板图
-- `NotoSansCJK-Bold/Regular.ttc`  字体
-- `SKILL.md`            完整技能文档（更详细的规则、历史坑、校准脚本）
-- `output/`             生成结果目录
-
-## 六、更详细的规则
-
-见 `SKILL.md` 顶部「🔴 最新定版」区块（关键词、模板校准、字号规则、横版二维码框、颜色等逐条说明）。
+- `generate_image.py`: 海报绘制核心。
+- `template_config.py`: 4 张活动模板的坐标与样式配置。
+- `template_new_1.png`: 学院模板。
+- `template_new_5.png`: 有二维码模板（沿用原新预告+企微朋友圈设计）。
+- `template_new_no_qr.png`: 新无二维码竖版模板。
+- `template_new_horizontal.png`: 新横版模板。
+- `check_qr_codes.py`: 在 PPT 制作群按发送顺序识别胡亮第 3 张二维码。
+- `SKILL.md`: 完整工作流和飞书发送规则。
