@@ -32,7 +32,7 @@ TEMPLATES_CONFIG = {
         "path": "template_new_5.png",
         "qr_box": [290, 2654, 408, 408],
         "time_box": [1000, 2400, 1180, 158],
-        "date_code_box": [1088, 2871, 458, 106],
+        "date_code_box": [1065, 2871, 504, 106],
         "title_x": 226,
         "title_y": 1354,
         "title_max_width": 2110,
@@ -90,13 +90,6 @@ TEMPLATES_CONFIG = {
         "title_y": 219,
         "title_max_width": 1980,
         "balance_two_line_title": True,
-        # The 2026-09-10 supplied horizontal background retains sample text.
-        # Clear only those two left-side sample-text areas before drawing live data.
-        "clear_placeholder_text_regions": [
-            [120, 120, 2050, 540],
-            [120, 670, 1850, 570],
-        ],
-        "restore_template_regions": [[2050, 50, 190, 160]],
         "caption_max_width": 1900,
         "caption_item_gap_max": 40,
         "caption_item_gap_min": 18,
