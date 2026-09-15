@@ -97,7 +97,7 @@ for template_id, config in TEMPLATES_CONFIG.items():
 
 **10. 实际执行目录**：以当前安装后的 `live-poster-codex` 技能目录为唯一运行源。备份目录只用于存档和分享，不作为生成海报的运行源；如果看到命令、metadata 或脚本默认值指向旧备份路径，必须改用当前技能目录。
 
-**11. 跨电脑路径规则（2026-09-10 新增）**：禁止把 `/Users/fanlili/...` 等个人绝对路径当成可复用命令。执行前按当前机器确定技能目录和 CLI：`SKILL_ROOT` 为当前 `SKILL.md` 所在目录，`LARK_CLI="${LARK_CLI:-$(command -v lark-cli)}"`。若 `LARK_CLI` 为空，先安装/配置 lark-cli，不能改用 user 身份绕过机器人流程。
+**11. 跨电脑路径规则（2026-09-10 新增）**：禁止把 `/Users/fanlili/...` 等个人绝对路径当成可复用命令。执行前按当前机器确定技能目录和 CLI：`SKILL_ROOT` 为当前 `SKILL.md` 所在目录。若机器上存在多个 `lark-cli`，不能只取 `command -v` 的第一个结果，必须逐个检查 `--version` 和 `im +messages-send --help`，选择已配置 `live-poster-bot` 且支持当前 `post` 发送参数的版本。当前机器 `/usr/local/bin/lark-cli` 为旧版 `1.0.13`，不适合定时脚本；应使用 `${HOME}/.npm-global/bin/lark-cli`。若没有可用 CLI，先安装/配置，不能改用 user 身份绕过机器人流程。
 
 详细坑与校准脚本见 `memory/feedback_live_poster_layout.md` 和 `memory/feedback_live_poster_workflow.md`。
 
@@ -265,6 +265,8 @@ for template_id, config in TEMPLATES_CONFIG.items():
 macOS LaunchAgent 注意事项（2026-07-10 补充）：
 - LaunchAgent 的运行环境不会继承终端 PATH。脚本里必须显式加入：
   `export PATH="/usr/local/bin:/opt/homebrew/bin:${HOME}/.npm-global/bin:/usr/bin:/bin:/usr/sbin:/sbin"`
+- 脚本必须把经版本检查后的可用 CLI 写入 `LARK` 变量；不得硬编码或回退到 `/usr/local/bin/lark-cli` 旧版。当前机器应为 `LARK="${HOME}/.npm-global/bin/lark-cli"`。
+- 创建 LaunchAgent 前，必须用与正式发送完全相同的 `--msg-type post --content` 参数执行一次 `--dry-run`。预检失败时不得加载任务，先修复 CLI 版本或 JSON 参数。
 - 否则 `lark-cli` 可能因 shebang `env node` 找不到 `/usr/local/bin/node` 而失败，表现为定时任务触发了但没有发飞书消息，日志里会出现 `env: node: No such file or directory`。
 - **北京时间硬校验（2026-07-28 新增，最高优先级）**：团队群 17:00 通知的业务时间永远是北京时间。LaunchAgent / Cron / 本机时区都只能作为“唤醒器”，不能作为最终发送依据。发送脚本在任何飞书发送动作之前，必须用 `Asia/Shanghai` 目标时间计算绝对 epoch：
   - 若当前时间早于目标北京时间：脚本必须 sleep 到目标时间后再发送，不能直接退出，也不能提前发送。
@@ -295,6 +297,7 @@ PY
     fi
     ```
 - 创建后必须检查：`launchctl print gui/$(id -u)/{label}`，确认任务已加载；执行后必须查看日志，确认飞书文字和图片都已发出。
+- 到点后 5 分钟内必须完成双重验收：日志中两次发送及 sender 校验均成功，且目标群实际存在 bot 发出的文字消息和学院海报。任一项失败，必须立刻向用户报告并补发，不能仅报告“任务已加载”。
 - LaunchAgent 的 `StartCalendarInterval` 不含年份，一次性任务执行完成后必须 `bootout` 并删除 plist，避免次年同月同日再次触发。
 
 2026-07-10 漏发复盘（必须吸取）：
