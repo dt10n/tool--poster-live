@@ -51,10 +51,7 @@ TEMPLATES_CONFIG = {
         "bullet_dot_x": 275,
         "bullet_dot_r": 14,
         "content_bot": 2367,
-        # Issue 475 calibration: move the title and caption group up 20px
-        # while preserving the time capsule and QR-code area.
-        "t5_content_shift": 10,
-        "content_y_offset": -10,
+        "t5_content_shift": 30,
         "content_layout": "template5",
         "time_cover_mode": "none",
         "time_text_x_offset": 0,
@@ -69,7 +66,9 @@ TEMPLATES_CONFIG = {
         "time_box": [882, 2304, 1328, 198],
         "date_code_box": None,
         "title_x": 226,
-        "title_y": 1354,
+        # Template-specific content region: the portrait/bio composition sits
+        # higher, so both anchors move together and auto-layout stays intact.
+        "title_y": 1334,
         "title_max_width": 2110,
         "caption_max_width": 1930,
         "caption_item_gap_max": 40,
@@ -80,7 +79,7 @@ TEMPLATES_CONFIG = {
         "content_x": 346,
         "bullet_dot_x": 275,
         "bullet_dot_r": 14,
-        "content_bot": 2293,
+        "content_bot": 2273,
         "t5_content_shift": 30,
         "content_layout": "template5",
         "time_cover_mode": "none",
