@@ -710,19 +710,34 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
 
     # ① 用白色精确覆盖胶囊内的占位文字
     # 旧学院模板保留右侧胶囊的安全边界；其余活动模板给出精确文字区。
-    if config and config.get("time_cover_mode") == "full_box":
+    time_cover_mode = config.get("time_cover_mode") if config else None
+    time_cover_x = config.get("time_cover_x") if config else None
+    if time_cover_mode == "none":
+        cover_x1 = box_x1
+        cover_x2 = box_x2
+    elif time_cover_x:
+        cover_x1, cover_x2 = time_cover_x
+    elif time_cover_mode == "full_box":
         cover_x1 = box_x1
         cover_x2 = box_x2
     else:
         cover_x1 = 1030
         cover_x2 = 2150
-    cover_y1 = box_y1 + 4
-    cover_y2 = box_y2 - 4
-    draw.rectangle([cover_x1, cover_y1, cover_x2, cover_y2],
-                   fill=(255, 255, 255, 255))
+    cover_top_inset = (config.get("time_cover_top_inset") if config else None)
+    cover_bottom_inset = (config.get("time_cover_bottom_inset") if config else None)
+    cover_y1 = box_y1 + (4 if cover_top_inset is None else cover_top_inset)
+    cover_y2 = box_y2 - (4 if cover_bottom_inset is None else cover_bottom_inset)
+    if time_cover_mode != "none":
+        draw.rectangle([cover_x1, cover_y1, cover_x2, cover_y2],
+                       fill=(255, 255, 255, 255))
 
     # ② 字号自适应，确保不超胶囊宽度
-    max_text_w = cover_x2 - cover_x1 - 20
+    time_text_box = config.get("time_text_box") if config else None
+    if time_text_box:
+        text_box_x1, text_box_x2 = time_text_box
+    else:
+        text_box_x1, text_box_x2 = cover_x1, cover_x2
+    max_text_w = text_box_x2 - text_box_x1 - 20
     time_font_size = max(60, min(110, int(box_h * 0.70)))
     time_font = _load_font(bold_font_path, time_font_size)
     text_bbox_t = draw.textbbox((0, 0), live_time, font=time_font)
@@ -740,7 +755,7 @@ def create_poster(template_path, output_path, qr_image_path, title, caption_list
     _tx_off = (config.get("time_text_x_offset") if config else None)
     if _tx_off is None:
         _tx_off = -50
-    text_x = cover_x1 + ((cover_x2 - cover_x1) - text_w) // 2 + _tx_off
+    text_x = text_box_x1 + ((text_box_x2 - text_box_x1) - text_w) // 2 + _tx_off
     text_y = box_y1 + (box_h - text_h) // 2 - text_bbox_t[1]
     draw.text((text_x, text_y), live_time, font=time_font, fill=TIME_COLOR)
     

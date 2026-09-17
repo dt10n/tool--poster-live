@@ -38,10 +38,13 @@ QR_SENDER_APP_IDS = {
     "cli_a9388a10967b9cd5",  # 真维斯，2026-09-10 实测由其代胡亮发二维码
 }
 # 支持同事在不同系统/用户目录下安装 lark-cli；可用 LARK_CLI 显式覆盖。
+# 当前机器的 /usr/local/bin/lark-cli 是旧版，优先选择已验证的 npm-global 客户端。
+_preferred_lark_cli = os.path.expanduser("~/.npm-global/bin/lark-cli")
 LARK_CLI = (
     os.environ.get("LARK_CLI")
+    or (_preferred_lark_cli if os.path.isfile(_preferred_lark_cli) else None)
     or shutil.which("lark-cli")
-    or os.path.expanduser("~/.npm-global/bin/lark-cli")
+    or ""
 )
 LARK_PROFILE = os.environ.get("LARK_PROFILE", "live-poster-bot")
 
