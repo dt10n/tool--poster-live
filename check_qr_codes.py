@@ -68,7 +68,7 @@ def fetch_messages(page_size=50) -> list:
         "--as", "bot",
         "--chat-id", PPT_CHAT_ID,
         "--page-size", str(page_size),
-        "--sort", "desc",
+        "--order", "desc",
     ])
     if not data.get("ok"):
         print(f"[ERROR] 抓取消息失败: {data.get('error')}", file=sys.stderr)
